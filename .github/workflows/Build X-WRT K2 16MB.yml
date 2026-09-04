@@ -1,7 +1,7 @@
 name: Build X-WRT K2 16MB
 
 on:
-  workflow_dispatch: # 允许手动点击运行
+  workflow_dispatch:
 
 jobs:
   build:
@@ -10,8 +10,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Initialization environment
         env:
@@ -26,33 +24,43 @@ jobs:
           sudo mkdir -p /workdir
           sudo chown $USER:$GROUPS /workdir
 
+      - name: Clone source code
+        working-directory: /workdir
+        run: |
+          df -hT $PWD
+          git clone https://github.com/bejngeu/x-wrt.git openwrt
+          ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+
       - name: Load custom configuration
         run: |
-          cat > openwrt/.config << 'EOF'
-CONFIG_TARGET_ramips=y
-CONFIG_TARGET_ramips_mt7620=y
-CONFIG_TARGET_ramips_mt7620_DEVICE_phicomm_k2=y
-CONFIG_PACKAGE_luci=y
-CONFIG_PACKAGE_luci-base=y
-CONFIG_PACKAGE_luci-mod-admin-full=y
-CONFIG_PACKAGE_luci-theme-bootstrap=y
-EOF
+          cat >> openwrt/.config << 'EOF'
+          CONFIG_TARGET_ramips=y
+          CONFIG_TARGET_ramips_mt7620=y
+          CONFIG_TARGET_ramips_mt7620_DEVICE_phicomm_k2=y
+          CONFIG_PACKAGE_luci=y
+          CONFIG_PACKAGE_luci-base=y
+          CONFIG_PACKAGE_luci-mod-admin-full=y
+          CONFIG_PACKAGE_luci-theme-bootstrap=y
+          EOF
 
       - name: Download package
+        id: package
         run: |
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+          make defconfig
 
       - name: Compile the firmware
+        id: compile
         run: |
           cd openwrt
-          make defconfig
-          make download -j8
-          make V=s -j$(nproc)
-
+          echo -e "$(nproc) thread compile"
+          make -j$(nproc) || make -j1 || make -j1 V=s
+          echo "status=success" >> $GITHUB_OUTPUT
+          
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: K2-16MB-Firmware
-          path: openwrt/bin/targets/ramips/mt7620/*.bin
+          name: OpenWrt-K2-Firmware
+          path: openwrt/bin/targets/ramips/mt7620/
