@@ -1,0 +1,86 @@
+name: Build X-WRT K2 16MB
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: 1. Checkout code
+        uses: actions/checkout@v4
+
+      - name: 2. Initialization environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install $(curl -fsSL git.io/depends-ubuntu-2204)
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+          sudo timedatectl set-timezone "Asia/Shanghai"
+
+      - name: 3. Clone X-WRT source code
+        run: |
+          git clone https://github.com/x-wrt/x-wrt.git openwrt
+
+      - name: 4. Modify DTS for 16MB flash
+        run: |
+          cd openwrt
+          # 查找K2的DTS文件（兼容不同目录结构）
+          DTS_FILE=$(find target/linux/ramips/dts -iname "*psg1218*" -o -iname "*phicomm*k2*" | head -1)
+          echo "找到DTS文件: $DTS_FILE"
+          cat $DTS_FILE | grep -A2 "firmware"
+
+          # 将firmware分区大小从0x7b0000(8MB)改为0xfb0000(16MB)
+          sed -i '/label = "firmware"/{n;s/0x7b0000/0xfb0000/}' $DTS_FILE
+
+          echo "===== 修改后的DTS ====="
+          cat $DTS_FILE | grep -A2 "firmware"
+
+          # 修改mt7620.mk中的IMAGE_SIZE
+          MK_FILE="target/linux/ramips/image/mt7620.mk"
+          if [ -f "$MK_FILE" ]; then
+            echo "找到mt7620.mk，修改IMAGE_SIZE..."
+            sed -i '/phicomm_k2/,/endef/s/IMAGE_SIZE := .*/IMAGE_SIZE := 16064k/' $MK_FILE
+            echo "===== 修改后的mk ====="
+            grep -A10 "phicomm_k2" $MK_FILE | head -15
+          fi
+
+      - name: 5. Load custom configuration
+        run: |
+          cd openwrt
+          cat > .config << 'EOF'
+          CONFIG_TARGET_ramips=y
+          CONFIG_TARGET_ramips_mt7620=y
+          CONFIG_TARGET_ramips_mt7620_DEVICE_phicomm_k2=y
+          CONFIG_PACKAGE_luci=y
+          CONFIG_PACKAGE_luci-base=y
+          CONFIG_PACKAGE_luci-mod-admin-full=y
+          CONFIG_PACKAGE_luci-theme-bootstrap=y
+          EOF
+
+      - name: 6. Update feeds and install packages
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          make defconfig
+
+      - name: 7. Download packages
+        run: |
+          cd openwrt
+          make download -j8
+
+      - name: 8. Compile the firmware
+        run: |
+          cd openwrt
+          make -j$(nproc) || make -j1 V=s
+
+      - name: 9. Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenWrt-K2-16M-Firmware
+          path: openwrt/bin/targets/ramips/mt7620/*.bin
