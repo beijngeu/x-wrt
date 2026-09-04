@@ -1,6 +1,4 @@
-// 基于 mt7620a_phicomm_k2.dts 复制，修改 Flash 为 16MB
-// 文件路径：target/linux/ramips/dts/mt7620a_phicomm_k2-16m.dts
-
+// 基于原厂 K2 v22.4 布局修改，适配 16MB Flash
 /dts-v1/;
 
 #include "mt7620a.dtsi"
@@ -127,13 +125,11 @@
                 };
             };
 
-            /* ===== 16MB 改装关键修改 ===== */
-            /* 原厂8MB: reg = <0xA0000 0x760000>;  (约7.4MB) */
-            /* 改装16MB: reg = <0xA0000 0xF60000>; (约15.4MB) */
-            firmware: partition@a0000 {
+            /* ===== 16MB 改装关键修改 (v22.4 布局) ===== */
+            firmware: partition@50000 {
                 compatible = "denx,uimage";
                 label = "firmware";
-                reg = <0xa0000 0xf60000>;
+                reg = <0x50000 0xfb0000>; /* 从 0x50000 开始，大小约 15.7MB */
             };
         };
     };
